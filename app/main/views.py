@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 from datetime import datetime
 from flask import render_template, session, flash, redirect, url_for, current_app
+from flask.ext.login import login_required
 
 from . import main
 from .forms import NameForm
@@ -29,8 +30,7 @@ def index():
         session['name'] = form.name.data
         return redirect(url_for('.index'))
     return render_template('index.html', current_time=datetime.utcnow(),
-                           name=session.get('name'), form=form,
-                           known=session.get('known'))
+                           form=form)
 
 
 @main.route('/user')
