@@ -10,6 +10,7 @@ from .. import db
 
 
 @main.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     form = NameForm()
     if form.validate_on_submit():
