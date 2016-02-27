@@ -1,19 +1,55 @@
 # -*- coding: UTF-8 -*-
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask.ext.login import UserMixin
-from flask import current_app
+from flask.ext.login import UserMixin, AnonymousUserMixin
+from flask import current_app, request
+from datetime import datetime
+
+import hashlib
 
 from . import db, login_manager
 
 
 class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), unique=True)
+    name = db.Column(db.String(64), unique=True, index=True)
+    default = db.Column(db.Boolean, default=False, index=True)
+    permissions = db.Column(db.Integer)
     users = db.relationship('User', backref='role', lazy='dynamic')
+
+    @staticmethod
+    def init_roles():
+        roles = {}
+        roles['User'] = {'permissions': Permission.FOLLOW +
+                                        Permission.COMMENT +
+                                        Permission.WRITE_ARTICLES,
+                         'default': True}
+        roles['Moderator'] = {'permissions': Permission.FOLLOW +
+                                             Permission.COMMENT +
+                                             Permission.WRITE_ARTICLES +
+                                             Permission.MODERATE_COMMENTS,
+                              'default': False}
+        roles['Administrator'] = {'permissions': 0xff,
+                                  'default': False}
+        for rn, rp in roles.items():
+            r = Role.query.filter_by(name=rn).first()
+            if not r:
+                r = Role(name=rn)
+            r.permissions = rp['permissions']
+            r.default = rp['default']
+            db.session.add(r)
+        db.session.commit()
 
     def __repr__(self):
         return '<Role {}>'.format(self.name)
+
+
+class Permission(object):
+    FOLLOW = 0x01
+    COMMENT = 0x02
+    WRITE_ARTICLES = 0x04
+    MODERATE_COMMENTS = 0x08
+    ADMINISTER = 0x80
 
 
 class User(UserMixin, db.Model):
@@ -23,6 +59,23 @@ class User(UserMixin, db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
     password_hash = db.Column(db.String(128))
     confirmed = db.Column(db.Boolean, default=False)
+    name = db.Column(db.String(64))
+    location = db.Column(db.String(64))
+    about_me = db.Column(db.Text)
+    member_since = db.Column(db.DateTime, default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    avatar_hash = db.Column(db.String(32))
+    posts = db.relationship('Post', backref='author', lazy='dynamic')
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.role:
+            if self.email == current_app.config['FLASKY_ADMIN']:
+                self.role = Role.query.filter_by(permissions=0xff).first()
+            else:
+                self.role = Role.query.filter_by(default=True).first()
+        if not self.avatar_hash and not self.email:
+            self.avatar_hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
 
     @property
     def password(self):
@@ -31,6 +84,10 @@ class User(UserMixin, db.Model):
     @password.setter
     def password(self, password):
         self.password_hash = generate_password_hash(password, salt_length=16)
+
+    @property
+    def is_administrator(self):
+        return self.can(Permission.ADMINISTER)
 
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -83,13 +140,49 @@ class User(UserMixin, db.Model):
         if self.query.filter_by(email=new_email).first():
             return False
         self.email = new_email
+        self.avatar_hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
         db.session.add(self)
         return True
+
+    def can(self, permissions):
+        return self.role and (self.role.permissions & permissions) == permissions
+
+    def ping(self):
+        self.last_seen = datetime.utcnow()
+        db.session.add(self)
+
+    def gravatar(self, size=100, default='identicon', rating='g'):
+        url = 'https://secure.gravatar.com/avatar' if request.is_secure else 'http://www.gravatar.com/avatar'
+        hash = self.avatar_hash or hashlib.md5(self.email.encode('utf-8')).hexdigest()
+        return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(url=url,
+                                                                     hash=hash,
+                                                                     size=size,
+                                                                     default=default,
+                                                                     rating=rating)
 
     def __repr__(self):
         return '<User {}>'.format(self.username)
 
 
+class AnonymousUser(AnonymousUserMixin):
+
+    @property
+    def is_administrator(self):
+        return False
+
+    def can(self, permissions):
+        return False
+
+login_manager.anonymous_user = AnonymousUser
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+class Post(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    body = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+    author_id = db.Column(db.Integer)
