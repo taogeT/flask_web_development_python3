@@ -1,12 +1,11 @@
 # -*- coding: UTF-8 -*-
-from datetime import datetime
-from flask import render_template, session, flash, redirect, url_for
+from flask import render_template, flash, redirect, url_for, request
 from flask import abort, current_app
 from flask.ext.login import login_required, current_user
 
 from . import main
-from .forms import NameForm, UserEditProfileForm, AdminEditProfileForm
-from ..models import User, Permission, Role
+from .forms import PostForm, UserEditProfileForm, AdminEditProfileForm
+from ..models import User, Permission, Role, Post
 from .. import db
 from ..decorators import permission_required, admin_required
 
@@ -14,26 +13,18 @@ from ..decorators import permission_required, admin_required
 @main.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
-    form = NameForm()
-    if form.validate_on_submit():
-        old_name = session.get('name')
-        if old_name and old_name != form.name.data:
-            flash('Looks like you change your name!')
-        user = User.query.filter_by(username=form.name.data).first()
-        if user:
-            session['known'] = True
-        else:
-            user = User(username=form.name.data)
-            db.session.add(user)
-            session['known'] = False
-            if current_app.config['FLASKY_ADMIN']:
-                pass
-                # send_email(current_app.config['FLASKY_ADMIN'], 'New User',
-                #            'mail/new_user', user=user)
-        session['name'] = form.name.data
+    form = PostForm()
+    if current_user.can(Permission.WRITE_ARTICLES) and form.validate_on_submit():
+        post = Post(body=form.body.data,
+                    author=current_user._get_current_object())
+        db.session.add(post)
         return redirect(url_for('.index'))
-    return render_template('index.html', current_time=datetime.utcnow(),
-                           form=form)
+    page = request.args.get('page', type=int)
+    pagination = Post.query.order_by(Post.timestamp.desc()).paginate(
+                page=page,
+                per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                error_out=False)
+    return render_template('index.html', pagination=pagination, form=form)
 
 
 @main.route('/user/<username>')
@@ -41,7 +32,12 @@ def user(username):
     user = User.query.filter_by(username=username).first()
     if not user:
         abort(404)
-    return render_template('user.html', user=user)
+    page = request.args.get('page', type=int)
+    pagination = user.posts.order_by(Post.timestamp.desc()).paginate(
+                page=page,
+                per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                error_out=False)
+    return render_template('user.html', user=user, pagination=pagination)
 
 
 @main.route('/admin')

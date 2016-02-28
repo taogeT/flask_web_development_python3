@@ -4,8 +4,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask.ext.login import UserMixin, AnonymousUserMixin
 from flask import current_app, request
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
+from random import seed, randint
 
+import forgery_py
 import hashlib
+import markdown
+import bleach
 
 from . import db, login_manager
 
@@ -154,11 +159,26 @@ class User(UserMixin, db.Model):
     def gravatar(self, size=100, default='identicon', rating='g'):
         url = 'https://secure.gravatar.com/avatar' if request.is_secure else 'http://www.gravatar.com/avatar'
         hash = self.avatar_hash or hashlib.md5(self.email.encode('utf-8')).hexdigest()
-        return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(url=url,
-                                                                     hash=hash,
-                                                                     size=size,
-                                                                     default=default,
-                                                                     rating=rating)
+        return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(
+                url=url, hash=hash, size=size, default=default, rating=rating)
+
+    @staticmethod
+    def generate_fake(count=100):
+        seed()
+        for i in range(count):
+            u = User(email=forgery_py.internet.email_address(),
+                     username=forgery_py.internet.user_name(True),
+                     password=forgery_py.lorem_ipsum.word(),
+                     confirm=True,
+                     name=forgery_py.name.full_name(),
+                     location=forgery_py.address.city(),
+                     about_me=forgery_py.lorem_ipsum.sentence(),
+                     member_since=forgery_py.date.date(past=True))
+            db.session.add(u)
+            try:
+                db.session.commit()
+            except IntegrityError:
+                db.session.rollback()
 
     def __repr__(self):
         return '<User {}>'.format(self.username)
@@ -184,5 +204,27 @@ def load_user(user_id):
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     body = db.Column(db.Text)
+    body_html = db.Column(db.Text)
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
-    author_id = db.Column(db.Integer)
+    author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+    @body.setter
+    def set_body(self, body):
+        self.body = body
+        allowed_tags = ['a', 'abbr', 'acronym', 'b', 'blockquote', 'code',
+                        'em', 'i', 'li', 'ol', 'pre', 'strong', 'ul',
+                        'h1', 'h2', 'h3', 'p']
+        self.body_html = bleach.linkify(
+                            bleach.clean(markdown(self.body, output_format='html'),
+                                         tags=allowed_tags, strip=True))
+
+    @staticmethod
+    def generate_fake(count=100):
+        seed()
+        user_count = User.query.count()
+        for i in range(count):
+            u = User.query.offset(randint(0, user_count - 1)).first()
+            p = Post(body=forgery_py.lorem_ipsum.sentences(quantity=randint(1, 3)),
+                     timestamp=forgery_py.date.date(past=True), author=u)
+            db.session.add(p)
+            db.session.commit()
