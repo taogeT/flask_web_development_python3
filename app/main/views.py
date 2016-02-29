@@ -167,9 +167,10 @@ def follower(username):
                     page=page,
                     per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
                     error_out=False)
-    followers = pagination.items
-    return render_template('follower.html', pagination=pagination,
-                           followers=followers)
+    follows = [{'user': eitem.follower, 'timestamp': eitem.timestamp}
+               for eitem in pagination.items]
+    return render_template('follower.html', pagination=pagination, user=user,
+                           follows=follows, title='Followers of')
 
 
 @main.route('/followed-by/<username>')
@@ -184,6 +185,7 @@ def followed_by(username):
                     page=page,
                     per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
                     error_out=False)
-    follows = pagination.items
-    return render_template('follower.html', pagination=pagination,
-                           follows=follows, user=user)
+    follows = [{'user': eitem.followed, 'timestamp': eitem.timestamp}
+               for eitem in pagination.items]
+    return render_template('follower.html', pagination=pagination, user=user,
+                           follows=follows, title='Followed by')
