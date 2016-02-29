@@ -5,7 +5,7 @@ from flask.ext.login import login_required, current_user
 
 from . import main
 from .forms import PostForm, UserEditProfileForm, AdminEditProfileForm
-from ..models import User, Permission, Role, Post
+from ..models import User, Permission, Role, Post, Follow
 from .. import db
 from ..decorators import permission_required, admin_required
 
@@ -24,7 +24,8 @@ def index():
                 page=page,
                 per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
                 error_out=False)
-    return render_template('index.html', pagination=pagination, form=form)
+    posts = pagination.items
+    return render_template('index.html', pagination=pagination, form=form, posts=posts)
 
 
 @main.route('/user/<username>')
@@ -37,7 +38,8 @@ def user(username):
                 page=page,
                 per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
                 error_out=False)
-    return render_template('user.html', user=user, pagination=pagination)
+    posts = pagination.items
+    return render_template('user.html', user=user, pagination=pagination, posts=posts)
 
 
 @main.route('/admin')
@@ -96,3 +98,92 @@ def edit_profile_admin(id):
     form.location.data = user.location
     form.about_me.data = user.about_me
     return render_template('edit_profile.html', form=form, user=user)
+
+
+@main.route('/post/<int:id>')
+@login_required
+def post(id):
+    post = Post.query.get_or_404(id)
+    return render_template('post.html', posts=[post])
+
+
+@main.route('/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit(id):
+    post = Post.query.get_or_404(id)
+    if current_user != post.author and not current_user.can(Permission.ADMINISTER):
+        abort(403)
+    form = PostForm()
+    if form.validate_on_submit():
+        post.body = form.body.data
+        db.session.add(post)
+        flash('The post has been updated.')
+        return redirect(url_for('.post', id=post.id))
+    form.body.data = post.body
+    return render_template('edit_post.html', form=form)
+
+
+@main.route('/follow/<username>')
+@login_required
+@permission_required(Permission.FOLLOW)
+def follow(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('Invalid user.')
+        return redirect(url_for('.index'))
+    if current_user.is_following(user):
+        flash('You are already following this user.')
+        return redirect(url_for('.user', username=username))
+    current_user.follow(user)
+    flash('You are now following %s.' % username)
+    return redirect(url_for('.user', username=username))
+
+
+@main.route('/unfollow/<username>')
+@login_required
+@permission_required(Permission.FOLLOW)
+def unfollow(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('Invalid user.')
+        return redirect(url_for('.index'))
+    if not current_user.is_following(user):
+        flash('You are not following this user.')
+        return redirect(url_for('.user', username=username))
+    current_user.unfollow(user)
+    flash('You haven\'t been followed %s yet.' % username)
+    return redirect(url_for('.user', username=username))
+
+
+@main.route('/follower/<username>')
+@login_required
+def follower(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('Invalid user.')
+        return redirect(url_for('.index'))
+    page = request.args.get('page', 1, type=int)
+    pagination = user.follower.order_by(Follow.timestamp.desc()).paginate(
+                    page=page,
+                    per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                    error_out=False)
+    followers = pagination.items
+    return render_template('follower.html', pagination=pagination,
+                           followers=followers)
+
+
+@main.route('/followed-by/<username>')
+@login_required
+def followed_by(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('Invalid user.')
+        return redirect(url_for('.index'))
+    page = request.args.get('page', 1, type=int)
+    pagination = user.followed.order_by(Follow.timestamp.desc()).paginate(
+                    page=page,
+                    per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                    error_out=False)
+    follows = pagination.items
+    return render_template('follower.html', pagination=pagination,
+                           follows=follows, user=user)
