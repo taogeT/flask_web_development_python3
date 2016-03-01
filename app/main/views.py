@@ -1,11 +1,11 @@
 # -*- coding: UTF-8 -*-
 from flask import render_template, flash, redirect, url_for, request
-from flask import abort, current_app
+from flask import abort, current_app, make_response
 from flask.ext.login import login_required, current_user
 
 from . import main
-from .forms import PostForm, UserEditProfileForm, AdminEditProfileForm
-from ..models import User, Permission, Role, Post, Follow
+from .forms import PostForm, UserEditProfileForm, AdminEditProfileForm, CommentForm
+from ..models import User, Permission, Role, Post, Follow, Comment
 from .. import db
 from ..decorators import permission_required, admin_required
 
@@ -20,12 +20,17 @@ def index():
         db.session.add(post)
         return redirect(url_for('.index'))
     page = request.args.get('page', type=int)
-    pagination = Post.query.order_by(Post.timestamp.desc()).paginate(
+    show_followed = False
+    if current_user.is_authenticated:
+        show_followed = bool(request.cookies.get('show_followed', ''))
+    query = current_user.followed_posts if show_followed else Post.query
+    pagination = query.order_by(Post.timestamp.desc()).paginate(
                 page=page,
                 per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
                 error_out=False)
     posts = pagination.items
-    return render_template('index.html', pagination=pagination, form=form, posts=posts)
+    return render_template('index.html', pagination=pagination, form=form,
+                           posts=posts, show_followed=show_followed)
 
 
 @main.route('/user/<username>')
@@ -104,7 +109,23 @@ def edit_profile_admin(id):
 @login_required
 def post(id):
     post = Post.query.get_or_404(id)
-    return render_template('post.html', posts=[post])
+    form = CommentForm()
+    if form.validate_on_submit():
+        comment = Comment(body=form.body.data, post=post,
+                          author=current_user._get_current_object())
+        db.session.add(comment)
+        flash('Your comment has been published.')
+        return redirect(url_for('.post', id=post.id, page=-1))
+    page = request.args.get('page', 1, type=int)
+    if page == -1:
+        page = (Comment.query.count() - 1) / \
+                    current_app.config['FLASKY_COMMENTS_PER_PAGE']
+    pagination = post.comments.order_by(Comment.timestamp.asc()).paginate(
+                    page=page,
+                    per_page=current_app.config['FLASKY_COMMENTS_PER_PAGE'],
+                    error_out=False)
+    return render_template('post.html', posts=[post], pagination=pagination,
+                           form=form, comments=pagination.items)
 
 
 @main.route('/edit/<int:id>', methods=['GET', 'POST'])
@@ -165,7 +186,7 @@ def follower(username):
     page = request.args.get('page', 1, type=int)
     pagination = user.follower.order_by(Follow.timestamp.desc()).paginate(
                     page=page,
-                    per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                    per_page=current_app.config['FLASKY_FOLLOWERS_PER_PAGE'],
                     error_out=False)
     follows = [{'user': eitem.follower, 'timestamp': eitem.timestamp}
                for eitem in pagination.items]
@@ -183,9 +204,25 @@ def followed_by(username):
     page = request.args.get('page', 1, type=int)
     pagination = user.followed.order_by(Follow.timestamp.desc()).paginate(
                     page=page,
-                    per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
+                    per_page=current_app.config['FLASKY_FOLLOWERS_PER_PAGE'],
                     error_out=False)
     follows = [{'user': eitem.followed, 'timestamp': eitem.timestamp}
                for eitem in pagination.items]
     return render_template('follower.html', pagination=pagination, user=user,
                            follows=follows, title='Followed by')
+
+
+@main.route('/followed')
+@login_required
+def show_followed():
+    resp = make_response(redirect(url_for('.index')))
+    resp.set_cookie('show_followed', '1', max_age=30*24*60*60)
+    return resp
+
+
+@main.route('/all')
+@login_required
+def show_all():
+    resp = make_response(redirect(url_for('.index')))
+    resp.set_cookie('show_followed', '', max_age=30*24*60*60)
+    return resp

@@ -31,10 +31,10 @@
         {% endif %}
       {% endif %}
       <a href="{{ url_for('.follower', username=user.username) }}">
-        Follower:<span class="badge">{{ user.follower.count() }}</span>
+        Follower:<span class="badge">{{ user.follower.count() - 1 }}</span>
       </a>
       <a href="{{ url_for('.followed_by', username=user.username) }}">
-        Followed:<span class="badge">{{ user.followed.count() }}</span>
+        Followed:<span class="badge">{{ user.followed.count() - 1 }}</span>
       </a>
       {% if current_user.is_authenticated and user != current_user and user.is_following(current_user) %}
       | <span class="label label-default">Follows you</span>
