@@ -2,7 +2,7 @@
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask.ext.login import UserMixin, AnonymousUserMixin
-from flask import current_app, request
+from flask import current_app, request, url_for
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from random import seed, randint
@@ -13,6 +13,7 @@ import hashlib
 import bleach
 
 from . import db, login_manager
+from .exceptions import ValidationError
 
 
 class Role(db.Model):
@@ -85,7 +86,6 @@ class User(UserMixin, db.Model):
                                lazy='dynamic', cascade='all, delete-orphan')
     comments = db.relationship('Comment', backref='author', lazy='dynamic')
 
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if not self.role:
@@ -129,6 +129,10 @@ class User(UserMixin, db.Model):
         s = Serializer(current_app.config['SECRET_KEY'], expires_in=expiration)
         return s.dumps({'email': self.id, 'new_email': new_email})
 
+    def generate_auth_token(self, expiration=3600):
+        s = Serializer(current_app.config['SECRET_KEY'], expires_in=expiration)
+        return s.dumps({'id': self.id})
+
     def confirm(self, token):
         s = Serializer(current_app.config['SECRET_KEY'])
         try:
@@ -168,6 +172,15 @@ class User(UserMixin, db.Model):
         self.avatar_hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
         db.session.add(self)
         return True
+
+    @staticmethod
+    def verify_auth_token(token):
+        s = Serializer(current_app.config['SECRET_KEY'])
+        try:
+            datadict = s.loads(token)
+        except:
+            return False
+        return User.query.get(datadict.get('id'))
 
     def can(self, permissions):
         return self.role and (self.role.permissions & permissions) == permissions
@@ -215,6 +228,18 @@ class User(UserMixin, db.Model):
 
     def is_followed_by(self, user):
         return self.follower.filter_by(follower_id=user.id).count() > 0
+
+    def to_json(self):
+        json_user = {
+            'url': url_for('api.get_user', id=self.id, _external=True),
+            'username': self.username,
+            'member_since': self.member_since,
+            'last_seen': self.last_seen,
+            'posts': url_for('api.get_user_posts', id=self.id, _external=True),
+            'followed_posts': url_for('api.get_user_followed_posts', id=self.id, _external=True),
+            'post_count': self.posts.count()
+        }
+        return json_user
 
     @staticmethod
     def add_self_follows():
@@ -272,6 +297,27 @@ class Post(db.Model):
                      timestamp=forgery_py.date.date(past=True), author=u)
             db.session.add(p)
             db.session.commit()
+
+    def to_json(self):
+        json_post = {
+            'url': url_for('api.get_post', id=self.id, _external=True),
+            'body': self.body,
+            'body_html': self.body_html,
+            'timestamp': self.timestamp,
+            'author': url_for('api.get_user', id=self.author.id,
+                              _external=True),
+            'comments': url_for('api.get_post_comments', id=self.id,
+                                _external=True),
+            'comment_count': self.comments.count()
+        }
+        return json_post
+
+    @staticmethod
+    def from_json(json_post):
+        body = json_post.get('body')
+        if not body:
+            raise ValidationError('post does not have a body')
+        return Post(body=body)
 
 db.event.listen(Post.body, 'set', Post.on_changed_body)
 

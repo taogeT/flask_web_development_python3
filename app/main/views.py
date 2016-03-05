@@ -47,20 +47,6 @@ def user(username):
     return render_template('user.html', user=user, pagination=pagination, posts=posts)
 
 
-@main.route('/admin')
-@login_required
-@admin_required
-def for_admins_only():
-    return "For administrators!"
-
-
-@main.route('/moderate')
-@login_required
-@permission_required(Permission.MODERATE_COMMENTS)
-def for_moderates_only():
-    return "For moderators!"
-
-
 @main.route('/edit-profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
@@ -105,7 +91,7 @@ def edit_profile_admin(id):
     return render_template('edit_profile.html', form=form, user=user)
 
 
-@main.route('/post/<int:id>')
+@main.route('/post/<int:id>', methods=['GET', 'POST'])
 @login_required
 def post(id):
     post = Post.query.get_or_404(id)
@@ -117,7 +103,7 @@ def post(id):
         flash('Your comment has been published.')
         return redirect(url_for('.post', id=post.id, page=-1))
     page = request.args.get('page', 1, type=int)
-    if page == -1:
+    if page <= -1:
         page = (Comment.query.count() - 1) / \
                     current_app.config['FLASKY_COMMENTS_PER_PAGE']
     pagination = post.comments.order_by(Comment.timestamp.asc()).paginate(
@@ -226,3 +212,43 @@ def show_all():
     resp = make_response(redirect(url_for('.index')))
     resp.set_cookie('show_followed', '', max_age=30*24*60*60)
     return resp
+
+
+@main.route('/moderate')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate():
+    page = request.args.get('page', 1, type=int)
+    pagination = Comment.query.order_by(Comment.timestamp.desc()).paginate(
+                    page=page,
+                    per_page=current_app.config['FLASKY_COMMENTS_PER_PAGE'],
+                    error_out=False)
+    comments = pagination.items
+    return render_template('moderate.html', comments=comments, page=page,
+                           pagination=pagination)
+
+
+@main.route('/moderate/enable/<int:id>')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate_enable(id):
+    comment = Comment.query.get_or_404(id)
+    comment.disabled = False
+    db.session.add(comment)
+    return redirect(url_for('.moderate',
+                            page=request.args.get('page', 1, type=int)))
+
+
+@main.route('/moderate/disable/<int:id>')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate_disable(id):
+    comment = Comment.query.get_or_404(id)
+    comment.disabled = True
+    db.session.add(comment)
+    return redirect(url_for('.moderate',
+                            page=request.args.get('page', 1, type=int)))
+
+
+
+
