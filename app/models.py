@@ -93,9 +93,9 @@ class User(UserMixin, db.Model):
                 self.role = Role.query.filter_by(permissions=0xff).first()
             else:
                 self.role = Role.query.filter_by(default=True).first()
-        if not self.avatar_hash and not self.email:
+        if not self.avatar_hash and self.email:
             self.avatar_hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
-        self.follow(self)
+        self.followed.append(Follow(followed=self))
 
     @property
     def password(self):

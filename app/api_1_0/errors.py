@@ -13,7 +13,7 @@ def forbidden(messages):
 
 def bad_request(messages):
     response = jsonify({'errors': 'bad request', 'messages': messages})
-    response.status_code = 400
+    response.status_code = 401
     return response
 
 

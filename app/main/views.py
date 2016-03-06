@@ -11,7 +11,6 @@ from ..decorators import permission_required, admin_required
 
 
 @main.route('/', methods=['GET', 'POST'])
-@login_required
 def index():
     form = PostForm()
     if current_user.can(Permission.WRITE_ARTICLES) and form.validate_on_submit():
@@ -250,5 +249,12 @@ def moderate_disable(id):
                             page=request.args.get('page', 1, type=int)))
 
 
-
-
+@main.route('/shutdown')
+def shutdown():
+    if not current_app.testing:
+        abort(404)
+    shutdown = request.environ.get('werkzeug.server.shutdown')
+    if not shutdown:
+        abort(500)
+    shutdown()
+    return 'Shutting down...'
