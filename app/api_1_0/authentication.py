@@ -1,10 +1,9 @@
 # -*- coding: UTF-8 -*-
 from flask import g, jsonify
 from flask.ext.httpauth import HTTPBasicAuth
-from flask.ext.login import unauthorized
 
 from ..models import AnonymousUser, User
-from .errors import forbidden
+from .errors import forbidden, unauthorized
 from . import api
 
 auth = HTTPBasicAuth()
@@ -39,27 +38,10 @@ def before_request():
         return forbidden('Unconfirmed account')
 
 
-@api.route('/token')
+@api.route('/token/')
 @auth.login_required
 def token():
     if g.current_user.is_anonymous or g.token_used:
         return unauthorized('Invalid credentials')
-    return jsonify({'token': g.current_user.generate_auth_token(),
+    return jsonify({'token': g.current_user.generate_auth_token().decode('utf-8'),
                     'expiration': 3600})
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    

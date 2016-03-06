@@ -338,4 +338,30 @@ class Comment(db.Model):
                             bleach.clean(markdown(value, output_format='html'),
                                          tags=allowed_tags, strip=True))
 
+    def to_json(self):
+        comment_json = {
+            'url': url_for('api.get_comment', id=self.id, _external=True),
+            'body': self.body,
+            'body_html': self.body_html,
+            'timestamp': self.timestamp,
+            'disabled': self.disabled,
+            'author': url_for('api.get_user', id=self.author.id,
+                              _external=True),
+            'post': url_for('api.get_post', id=self.post.id, _external=True),
+        }
+        return comment_json
+
+    @staticmethod
+    def from_json(comment_json):
+        body = comment_json.get('body')
+        if not body:
+            raise ValidationError('comment does not have a body')
+        return Comment(body=body, disabled=comment_json.get('disabled', False))
+
 db.event.listen(Comment.body, 'set', Comment.on_changed_body)
+
+
+
+
+
+

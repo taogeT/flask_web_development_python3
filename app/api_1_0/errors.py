@@ -6,8 +6,20 @@ from ..exceptions import ValidationError
 
 
 def forbidden(messages):
-    response = jsonify({'errors': 'not found.', 'messages': messages})
+    response = jsonify({'errors': 'forbidden', 'messages': messages})
     response.status_code = 403
+    return response
+
+
+def bad_request(messages):
+    response = jsonify({'errors': 'bad request', 'messages': messages})
+    response.status_code = 400
+    return response
+
+
+def unauthorized(messages):
+    response = jsonify({'errors': 'unauthorized', 'messages': messages})
+    response.status_code = 400
     return response
 
 

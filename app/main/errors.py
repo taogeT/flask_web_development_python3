@@ -4,7 +4,7 @@ from flask import render_template, request, jsonify
 from . import main
 
 
-@main.app_errorhandler(404)
+@main.errorhandler(404)
 def page_not_found(error):
     if request.accept_mimetypes.accept_json and \
             not request.accept_mimetypes.accept_html:
