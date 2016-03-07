@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
+from flask.ext.script import Manager, Shell
+from flask.ext.migrate import Migrate, MigrateCommand
+
+from app import create_app, db
+from app.models import User, Role, Post, Comment
+
 import os
 
 cov = None
@@ -7,12 +13,6 @@ if os.environ.get('FLASK_COVERAGE'):
     import coverage
     cov = coverage.coverage(branch=True, include='app/*')
     cov.start()
-
-from flask.ext.script import Manager, Shell
-from flask.ext.migrate import Migrate, MigrateCommand
-
-from app import create_app, db
-from app.models import User, Role, Post, Comment
 
 app = create_app(os.environ.get('FLASKY_CONFIG') or 'default')
 manager = Manager(app)
@@ -47,6 +47,25 @@ def test(coverage=False):
         cov.html_report(directory=covdir)
         print('HTML version: file:// % s/index.html' % covdir)
         cov.erase()
+
+
+@manager.command
+def profile(length=25, profile_dir=None):
+    from werkzeug.contrib.profiler import ProfilerMiddleware
+    app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[length],
+                                      profile_dir=profile_dir)
+    app.run()
+
+
+@manager.command
+def deploy():
+    from flask.ext.migrate import upgrade
+    # upgrade database
+    upgrade()
+    # init role
+    Role.init_roles()
+    # user follow self
+    User.add_self_follows()
 
 
 if __name__ == '__main__':

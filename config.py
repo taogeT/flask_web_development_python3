@@ -40,6 +40,19 @@ class TestingConfig(Config):
 class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///'.format(os.path.join(basedir, 'data.sqlite'))
 
+    @staticmethod
+    def init_app(app):
+        Config.init_app(app)
+        # set production log to file
+        from logging import FileHandler, Formatter
+        import logging
+        filehd = FileHandler('tmp/production.log')
+        fileformat = Formatter('%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
+        filehd.setFormatter(fileformat)
+        filehd.setLevel(logging.INFO)
+        app.logger.addHandler(filehd)
+
+
 config = {
     'development': DevelopmentConfig,
     'testing': TestingConfig,
