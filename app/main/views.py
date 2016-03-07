@@ -2,6 +2,7 @@
 from flask import render_template, flash, redirect, url_for, request
 from flask import abort, current_app, make_response
 from flask.ext.login import login_required, current_user
+from flask.ext.sqlalchemy import get_debug_queries
 
 from . import main
 from .forms import PostForm, UserEditProfileForm, AdminEditProfileForm, CommentForm
@@ -258,3 +259,13 @@ def shutdown():
         abort(500)
     shutdown()
     return 'Shutting down...'
+
+
+@main.after_app_request
+def after_request(response):
+    for query in get_debug_queries():
+        if query.duration > current_app.config['FLASKY_DB_QUERY_TIMEOUT']:
+            current_app.logger.warning(
+                'Slow query: {}\nParameters: {}\nDuration: {}s\nContext: {}\n'.format(
+                    query.statement, query.parameters, query.duration, query.context))
+    return response
